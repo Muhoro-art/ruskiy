@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Web App",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../../node_modules/next/dist/bin/next", "dev", "--turbopack", "--port", "3939"],
+      "port": 3939,
+      "cwd": "apps/web"
+    },
+    {
+      "name": "Go API Server",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "./cmd/server"],
+      "port": 8080
+    },
+    {
+      "name": "Go Dev API",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "./cmd/devserver"],
+      "port": 8080,
+      "cwd": "services/api"
+    },
+    {
+      "name": "Python ML Service",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "main:app", "--reload", "--port", "8090"],
+      "port": 8090
+    },
+    {
+      "name": "Expo Mobile Dev Server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../../node_modules/expo/bin/cli", "start", "--port", "8081"],
+      "port": 8081,
+      "cwd": "apps/mobile"
+    }
+  ]
+}

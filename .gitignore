@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnp.*
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+services/api/tmp/
+services/api/bin/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Docker
+docker-compose.override.yml
+
+# Expo
+apps/mobile/.expo/
+
+# Logs
+*.log
+npm-debug.log*

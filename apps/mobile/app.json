@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Russkiy",
+    "slug": "russkiy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "russkiy",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "app.russkiy.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "app.russkiy.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#1e3a5f"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ]
+  }
+}

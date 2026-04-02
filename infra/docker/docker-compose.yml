@@ -1,0 +1,71 @@
+version: "3.9"
+
+services:
+  # PostgreSQL 16
+  postgres:
+    image: postgres:16-alpine
+    container_name: russkiy-postgres
+    environment:
+      POSTGRES_DB: russkiy
+      POSTGRES_USER: russkiy
+      POSTGRES_PASSWORD: russkiy
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../services/api/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U russkiy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: russkiy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Kafka (using KRaft mode, no Zookeeper)
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: russkiy-kafka
+    environment:
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    ports:
+      - "9094:9094"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  # Meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: russkiy-meilisearch
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: russkiy-dev-key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  meilisearch_data:

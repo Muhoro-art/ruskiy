@@ -1,0 +1,13 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.10.0
+numpy==2.2.0
+pymorphy3==2.0.3
+pymorphy3-dicts-ru==2.4.417150.4580142
+
+# Speech processing (Phase 1 v4-6)
+# openai-whisper
+# montreal-forced-aligner
+
+# ML serving
+# tritonclient[all]
