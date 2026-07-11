@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { SpeakButton } from "../SpeakButton";
+import { GlossText } from "../GlossText";
+import { buttonClasses } from "../ui";
+import { OPTION, OPTION_FOCUS } from "./styles";
 
 interface MultipleChoiceProps {
   promptRu?: string;
@@ -27,7 +31,13 @@ export function MultipleChoice({
   const [submitted, setSubmitted] = useState(false);
   const [hintLevel, setHintLevel] = useState(0);
 
-  const options = shuffleOnce([correctAnswer, ...distractors]);
+  // Shuffle once per exercise instance — NOT on every render (would make
+  // options jump under the user's cursor). Keyed on the answer set.
+  const options = useMemo(
+    () => shuffleOnce([correctAnswer, ...distractors]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [correctAnswer, distractors.join("")]
+  );
 
   function handleSubmit() {
     if (!selected) return;
@@ -48,8 +58,9 @@ export function MultipleChoice({
       {/* Prompt */}
       <div className="mb-8 text-center">
         {promptRu && (
-          <p className="text-3xl font-bold text-[var(--color-primary)] mb-2">
+          <p className="ru-text text-3xl font-bold text-[var(--color-primary)] mb-2 flex items-center justify-center gap-2">
             {promptRu}
+            <SpeakButton text={promptRu} className="w-9 h-9" />
           </p>
         )}
         <p className="text-lg text-[var(--color-text-muted)]">{promptEn}</p>
@@ -61,7 +72,8 @@ export function MultipleChoice({
           {hintSequence.slice(0, hintLevel).map((hint, i) => (
             <div
               key={i}
-              className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-800"
+              className="rounded-[var(--radius-control)] px-4 py-2 text-sm text-[var(--color-primary)]"
+              style={{ backgroundColor: "var(--color-gold-tint)", border: "1px solid color-mix(in srgb, var(--color-gold) 40%, white)" }}
             >
               💡 {hint}
             </div>
@@ -71,27 +83,22 @@ export function MultipleChoice({
 
       {/* Options */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        {options.map((option) => {
-          let style = "border-gray-200 hover:border-[var(--color-primary)] hover:bg-blue-50";
-
+        {options.map((option, i) => {
+          let style: string = OPTION.idle;
           if (submitted) {
-            if (option === correctAnswer) {
-              style = "border-green-500 bg-green-50 text-green-800";
-            } else if (option === selected && !isCorrect) {
-              style = "border-red-500 bg-red-50 text-red-800";
-            } else {
-              style = "border-gray-200 opacity-50";
-            }
+            if (option === correctAnswer) style = `${OPTION.correct} text-[var(--color-success)]`;
+            else if (option === selected && !isCorrect) style = `${OPTION.incorrect} text-[var(--color-accent)]`;
+            else style = "border-[var(--color-border)] opacity-50";
           } else if (option === selected) {
-            style = "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]";
+            style = OPTION.selected;
           }
 
           return (
             <button
-              key={option}
+              key={`${i}-${option}`}
               onClick={() => !submitted && setSelected(option)}
               disabled={submitted}
-              className={`p-4 rounded-xl border-2 text-lg font-medium transition-all ${style}`}
+              className={`ru-text p-4 rounded-[var(--radius-control)] border-2 text-lg font-medium transition-all ${OPTION_FOCUS} ${style}`}
             >
               {option}
             </button>
@@ -102,16 +109,16 @@ export function MultipleChoice({
       {/* Explanation after submit */}
       {submitted && explanationEn && (
         <div
-          className={`mb-6 p-4 rounded-lg border ${
-            isCorrect
-              ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
+          className="mb-6 p-4 rounded-[var(--radius-control)] border"
+          style={{
+            backgroundColor: isCorrect ? "var(--color-success-surface)" : "var(--color-danger-surface)",
+            borderColor: isCorrect ? "var(--color-success)" : "var(--color-accent)",
+          }}
         >
-          <p className="font-bold mb-1">
-            {isCorrect ? "Correct! ✓" : `Incorrect. The answer is: ${correctAnswer}`}
+          <p className="font-bold mb-1" style={{ color: isCorrect ? "var(--color-success)" : "var(--color-accent)" }}>
+            {isCorrect ? "✓ Correct!" : <>Not quite — the answer is <span className="ru-text font-bold">{correctAnswer}</span></>}
           </p>
-          <p className="text-sm">{explanationEn}</p>
+          <p className="text-sm text-[var(--color-text)]"><GlossText text={explanationEn} /></p>
         </div>
       )}
 
@@ -132,7 +139,7 @@ export function MultipleChoice({
           <button
             onClick={handleSubmit}
             disabled={!selected}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors disabled:opacity-50"
+            className={buttonClasses("navy", "lg")}
           >
             Check Answer
           </button>
@@ -147,7 +154,7 @@ export function MultipleChoice({
                 setHintLevel(0);
               }
             }}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors"
+            className={buttonClasses("navy", "lg")}
           >
             Continue →
           </button>

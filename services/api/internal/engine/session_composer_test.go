@@ -297,9 +297,9 @@ func TestMidSessionAdaptationTimeBudget(t *testing.T) {
 
 	// Trigger 3 adaptations that swap in longer exercises
 	longPool := []ContentSelection{
-		makeContentSel("skill-a", 0.85, model.ExerciseTranslation, 90),  // much longer
-		makeContentSel("skill-b", 0.90, model.ExerciseDictation, 100),   // much longer
-		makeContentSel("skill-c", 0.95, model.ExerciseFillBlank, 120),   // much longer
+		makeContentSel("skill-a", 0.85, model.ExerciseTranslation, 90), // much longer
+		makeContentSel("skill-b", 0.90, model.ExerciseDictation, 100),  // much longer
+		makeContentSel("skill-c", 0.95, model.ExerciseFillBlank, 120),  // much longer
 	}
 
 	// 3 rounds of coasting adaptation

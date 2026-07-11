@@ -6,6 +6,7 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["../../node_modules/next/dist/bin/next", "dev", "--turbopack", "--port", "3939"],
       "port": 3939,
+      "autoPort": false,
       "cwd": "apps/web"
     },
     {
@@ -17,8 +18,8 @@
     {
       "name": "Go Dev API",
       "runtimeExecutable": "go",
-      "runtimeArgs": ["run", "./cmd/devserver"],
-      "port": 8080,
+      "runtimeArgs": ["run", "-tags", "devserver", "./cmd/devserver"],
+      "port": 8099,
       "cwd": "services/api"
     },
     {

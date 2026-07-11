@@ -62,4 +62,17 @@ type CreateProfileRequest struct {
 	TargetLevel CEFRLevel      `json:"targetLevel"`
 	TargetDate  *string        `json:"targetDate,omitempty"`
 	WeeklyHours float64        `json:"weeklyHours"`
+	// Consent carries a parental-consent assertion for the kid segment so it can be
+	// persisted server-side as an auditable, deletable record (COPPA) instead of
+	// living only in the child's browser localStorage.
+	Consent *ConsentInfo `json:"consent,omitempty"`
+}
+
+// ConsentInfo is a parental-consent assertion captured at kid-profile creation.
+// NOTE: this records THAT consent was asserted (method + consenting email +
+// timestamp) — it is not, by itself, *verifiable* parental consent, which requires
+// an out-of-band flow (parent account, signed form, nominal charge).
+type ConsentInfo struct {
+	Method         string `json:"method"`         // e.g. "guardian_checkbox"
+	ConsenterEmail string `json:"consenterEmail"` // the consenting adult's email
 }

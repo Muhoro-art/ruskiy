@@ -3,8 +3,11 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -41,6 +44,17 @@ func VerifyPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
+// dummyBcryptHash is a valid bcrypt hash of a fixed string. It backs DummyVerify,
+// which equalizes login timing on an unknown email (no user hash to compare) so an
+// attacker can't distinguish registered from unregistered emails by response latency.
+// A malformed hash short-circuits instantly, so this MUST be a real bcrypt hash.
+var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
+
+// DummyVerify performs a throwaway bcrypt comparison matching VerifyPassword's cost.
+func DummyVerify(password string) {
+	_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+}
+
 // ------------------- RSA Key Management -------------------
 
 // KeyPair holds the RSA key pair used for RS256 signing.
@@ -58,9 +72,64 @@ func GenerateKeyPair() (*KeyPair, error) {
 	return &KeyPair{PrivateKey: priv, PublicKey: &priv.PublicKey}, nil
 }
 
+// LoadOrCreateKeyPair loads the RSA signing key from a PEM file so tokens survive
+// restarts AND are valid across every replica (all instances share one key). If
+// path is empty it falls back to an ephemeral in-memory key (dev only). If path
+// is set but the file is missing, it generates a key and persists it.
+//
+// This fixes the critical issue where each process minted a fresh key, logging
+// every user out on deploy and breaking load-balanced auth.
+func LoadOrCreateKeyPair(path string) (*KeyPair, error) {
+	if path == "" {
+		return GenerateKeyPair()
+	}
+
+	if data, err := os.ReadFile(path); err == nil {
+		block, _ := pem.Decode(data)
+		if block == nil {
+			return nil, fmt.Errorf("no PEM block in %s", path)
+		}
+		priv, err := parseRSAPrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse key %s: %w", path, err)
+		}
+		return &KeyPair{PrivateKey: priv, PublicKey: &priv.PublicKey}, nil
+	}
+
+	// No existing key — generate and persist (0600).
+	kp, err := GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: func() []byte { b, _ := x509.MarshalPKCS8PrivateKey(kp.PrivateKey); return b }(),
+	})
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		return nil, fmt.Errorf("persist key %s: %w", path, err)
+	}
+	return kp, nil
+}
+
+func parseRSAPrivateKey(der []byte) (*rsa.PrivateKey, error) {
+	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		if rk, ok := k.(*rsa.PrivateKey); ok {
+			return rk, nil
+		}
+		return nil, errors.New("PEM is not an RSA private key")
+	}
+	return x509.ParsePKCS1PrivateKey(der)
+}
+
 // ------------------- JWT Token Generation -------------------
 
-const (
+// AccessTokenTTL / RefreshTokenTTL are the token lifetimes. They default to 15m / 30d
+// but are overridden ONCE at startup from JWT_ACCESS_TTL_MINUTES / JWT_REFRESH_TTL_DAYS
+// (see cmd/server/main.go, applied before any token is issued and before the Redis
+// token-store TTL is derived from RefreshTokenTTL). They are package vars, not consts,
+// only so that startup override is possible; nothing mutates them after serving begins,
+// so the concurrent reads on the request path are race-free.
+var (
 	AccessTokenTTL  = 15 * time.Minute // 900 seconds
 	RefreshTokenTTL = 30 * 24 * time.Hour
 )
@@ -90,17 +159,25 @@ func GenerateAccessToken(kp *KeyPair, userID, role, accountType string) (string,
 	return token.SignedString(kp.PrivateKey)
 }
 
-// GenerateRefreshToken creates an RS256-signed refresh JWT with a unique jti claim.
-func GenerateRefreshToken(kp *KeyPair, userID string) (string, error) {
+// GenerateRefreshToken creates an RS256-signed refresh JWT with a unique jti claim
+// and typ="refresh". It returns the signed token AND its jti so the whole refresh
+// lifecycle (store / rotate / revoke) can key on a single stable identifier rather
+// than the raw token string (which is what broke logout revocation).
+func GenerateRefreshToken(kp *KeyPair, userID string) (tokenStr, jti string, err error) {
 	now := time.Now()
-	claims := jwt.RegisteredClaims{
-		ID:        uuid.New().String(),
-		Subject:   userID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(RefreshTokenTTL)),
+	jti = uuid.New().String()
+	claims := TokenClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(RefreshTokenTTL)),
+		},
+		Type: "refresh",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(kp.PrivateKey)
+	tokenStr, err = token.SignedString(kp.PrivateKey)
+	return tokenStr, jti, err
 }
 
 // ------------------- Token Validation -------------------
@@ -133,8 +210,13 @@ func ValidateToken(kp *KeyPair, tokenStr string) (*TokenClaims, error) {
 // backed by Redis or PostgreSQL; here we provide an in-memory implementation
 // suitable for unit testing.
 type TokenStore interface {
-	// StoreRefreshToken saves a refresh token with its metadata.
+	// StoreRefreshToken saves a refresh token (keyed by its jti) with its metadata.
 	StoreRefreshToken(tokenID, userID string) error
+	// GetRefreshToken returns the userID a refresh-token jti was issued for, and
+	// whether it is currently in the issued/allowlisted set. This turns the store
+	// into a real allowlist: a signed-but-never-issued (or already-rotated) token
+	// is rejected even though its signature verifies.
+	GetRefreshToken(tokenID string) (userID string, ok bool)
 	// RevokeRefreshToken marks a refresh token as revoked.
 	RevokeRefreshToken(tokenID string) error
 	// IsRevoked checks if a refresh token has been revoked.
@@ -154,45 +236,50 @@ type RotationResult struct {
 // RotateRefreshToken validates the old refresh token, revokes it, and issues
 // a new access + refresh token pair.
 func RotateRefreshToken(kp *KeyPair, store TokenStore, oldTokenStr string, role, accountType string) (*RotationResult, error) {
-	// Parse the old token
-	claims := &jwt.RegisteredClaims{}
-	token, err := jwt.ParseWithClaims(oldTokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, ErrInvalidSignature
-		}
-		return kp.PublicKey, nil
-	})
-	if err != nil || !token.Valid {
+	// Validate signature/expiry and read the typed claims (jti + typ).
+	claims, err := ValidateToken(kp, oldTokenStr)
+	if err != nil {
+		return nil, err // ErrTokenExpired / ErrInvalidSignature propagate to the handler
+	}
+	// Only a refresh token may be rotated — an access token presented here is rejected.
+	if claims.Type != "refresh" {
+		return nil, ErrInvalidToken
+	}
+	jti := claims.ID
+	if jti == "" {
 		return nil, ErrInvalidToken
 	}
 
-	tokenID := oldTokenStr // Use raw token as ID for simplicity
-
-	// Check if this token was already revoked
-	if store.IsRevoked(tokenID) {
-		store.RecordRevokedReuse(tokenID)
+	// Reuse of an already-revoked token is a security event.
+	if store.IsRevoked(jti) {
+		store.RecordRevokedReuse(jti)
 		return nil, ErrTokenRevoked
 	}
 
-	// Revoke the old token
-	if err := store.RevokeRefreshToken(tokenID); err != nil {
+	// Allowlist gate: the jti must currently be in the issued set and belong to this
+	// subject. A leaked-but-signed token that was never issued (or was already
+	// rotated/logged-out) is rejected here even though its signature is valid.
+	if storedUser, ok := store.GetRefreshToken(jti); !ok || storedUser != claims.Subject {
+		return nil, ErrInvalidToken
+	}
+
+	// Revoke + de-list the old token so it cannot be rotated twice.
+	if err := store.RevokeRefreshToken(jti); err != nil {
 		return nil, err
 	}
 
 	userID := claims.Subject
 
-	// Issue new tokens
+	// Issue new tokens; store the NEW refresh token's jti in the allowlist.
 	newAccess, err := GenerateAccessToken(kp, userID, role, accountType)
 	if err != nil {
 		return nil, err
 	}
-	newRefresh, err := GenerateRefreshToken(kp, userID)
+	newRefresh, newJTI, err := GenerateRefreshToken(kp, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	newRefreshID := newRefresh
-	_ = store.StoreRefreshToken(newRefreshID, userID)
+	_ = store.StoreRefreshToken(newJTI, userID)
 
 	return &RotationResult{
 		AccessToken:  newAccess,
@@ -211,6 +298,14 @@ const (
 type LockoutEntry struct {
 	FailedAttempts int
 	LockedUntil    *time.Time
+}
+
+// Lockout is the account-lockout interface used by the auth handler, so the
+// implementation can be swapped (in-memory for dev/tests, Redis in production).
+type Lockout interface {
+	CheckLockout(userID string) int
+	RecordFailedAttempt(userID string) int
+	ResetAttempts(userID string)
 }
 
 // LockoutManager tracks failed login attempts and enforces account lockout.
@@ -354,7 +449,10 @@ func ExchangeOAuthCode(kp *KeyPair, provider OAuthProvider, users UserLookup, pr
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := GenerateRefreshToken(kp, userID)
+	// NOTE: the OAuth path is not currently wired to a TokenStore, so this refresh
+	// token is not added to the allowlist. If OAuth login is ever enabled, thread a
+	// TokenStore in here and StoreRefreshToken(jti, userID) so rotation accepts it.
+	refreshToken, _, err := GenerateRefreshToken(kp, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -392,6 +490,13 @@ func (s *MemoryTokenStore) StoreRefreshToken(tokenID, userID string) error {
 	defer s.mu.Unlock()
 	s.tokens[tokenID] = userID
 	return nil
+}
+
+func (s *MemoryTokenStore) GetRefreshToken(tokenID string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	userID, ok := s.tokens[tokenID]
+	return userID, ok
 }
 
 func (s *MemoryTokenStore) RevokeRefreshToken(tokenID string) error {

@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { GlossText } from "../GlossText";
+import { buttonClasses } from "../ui";
+import { OPTION, OPTION_FOCUS } from "./styles";
 
 interface FillBlankProps {
   promptRu: string;
@@ -52,9 +55,12 @@ export function FillBlank({
     }
   }
 
-  const options = distractors.length > 0
-    ? shuffleOnce([correctAnswer, ...distractors])
-    : [];
+  // Shuffle once per exercise instance, not on every render.
+  const options = useMemo(
+    () => (distractors.length > 0 ? shuffleOnce([correctAnswer, ...distractors]) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [correctAnswer, distractors.join("")]
+  );
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -63,14 +69,14 @@ export function FillBlank({
         <p className="text-2xl font-bold text-[var(--color-primary)] leading-relaxed">
           {parts[0]}
           <span
-            className={`inline-block min-w-32 mx-2 px-4 py-1 rounded-lg border-2 border-dashed text-center ${
+            className={`ru-text inline-block min-w-32 mx-2 px-4 py-1 rounded-[var(--radius-control)] border-2 border-dashed text-center ${
               submitted
                 ? isCorrect
-                  ? "border-green-500 bg-green-50 text-green-800"
-                  : "border-red-500 bg-red-50 text-red-800"
+                  ? "border-[var(--color-success)] bg-[var(--color-success-surface)] text-[var(--color-success)]"
+                  : "border-[var(--color-accent)] bg-[var(--color-danger-surface)] text-[var(--color-accent)]"
                 : answer
-                  ? "border-[var(--color-primary)] bg-blue-50"
-                  : "border-gray-300 bg-gray-50 text-gray-400"
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)]"
+                  : "border-[var(--color-border-strong)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"
             }`}
           >
             {answer || "___"}
@@ -90,7 +96,8 @@ export function FillBlank({
           {hintSequence.slice(0, hintLevel).map((hint, i) => (
             <div
               key={i}
-              className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 text-sm text-yellow-800"
+              className="rounded-[var(--radius-control)] px-4 py-2 text-sm text-[var(--color-primary)]"
+              style={{ backgroundColor: "var(--color-gold-tint)", border: "1px solid color-mix(in srgb, var(--color-gold) 40%, white)" }}
             >
               💡 {hint}
             </div>
@@ -103,14 +110,12 @@ export function FillBlank({
         <div className="mb-6">
           {mode === "select" && options.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
-              {options.map((opt) => (
+              {options.map((opt, i) => (
                 <button
-                  key={opt}
+                  key={`${i}-${opt}`}
                   onClick={() => setAnswer(opt)}
-                  className={`p-4 rounded-xl border-2 text-lg font-medium transition-all ${
-                    answer === opt
-                      ? "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]"
-                      : "border-gray-200 hover:border-[var(--color-primary)] hover:bg-blue-50"
+                  className={`ru-text p-4 rounded-[var(--radius-control)] border-2 text-lg font-medium transition-all ${OPTION_FOCUS} ${
+                    answer === opt ? OPTION.selected : OPTION.idle
                   }`}
                 >
                   {opt}
@@ -125,7 +130,7 @@ export function FillBlank({
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               placeholder="Type your answer in Russian..."
-              className="w-full px-6 py-4 text-xl text-center border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none"
+              className="ru-text w-full px-6 py-4 text-xl text-center border-2 border-[var(--color-border-strong)] rounded-[var(--radius-control)] focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none"
               autoComplete="off"
               spellCheck={false}
               lang="ru"
@@ -146,18 +151,16 @@ export function FillBlank({
       {/* Result */}
       {submitted && explanationEn && (
         <div
-          className={`mb-6 p-4 rounded-lg border ${
-            isCorrect
-              ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
+          className="mb-6 p-4 rounded-[var(--radius-control)] border"
+          style={{
+            backgroundColor: isCorrect ? "var(--color-success-surface)" : "var(--color-danger-surface)",
+            borderColor: isCorrect ? "var(--color-success)" : "var(--color-accent)",
+          }}
         >
-          <p className="font-bold mb-1">
-            {isCorrect
-              ? "Correct! ✓"
-              : `Incorrect. The answer is: ${correctAnswer}`}
+          <p className="font-bold mb-1" style={{ color: isCorrect ? "var(--color-success)" : "var(--color-accent)" }}>
+            {isCorrect ? "✓ Correct!" : <>Not quite — the answer is <span className="ru-text font-bold">{correctAnswer}</span></>}
           </p>
-          <p className="text-sm">{explanationEn}</p>
+          <p className="text-sm text-[var(--color-text)]"><GlossText text={explanationEn} /></p>
         </div>
       )}
 
@@ -175,7 +178,7 @@ export function FillBlank({
           <button
             onClick={handleSubmit}
             disabled={!answer}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors disabled:opacity-50"
+            className={buttonClasses("navy", "lg")}
           >
             Check Answer
           </button>
@@ -190,7 +193,7 @@ export function FillBlank({
                 setHintLevel(0);
               }
             }}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors"
+            className={buttonClasses("navy", "lg")}
           >
             Continue →
           </button>

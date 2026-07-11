@@ -6,10 +6,97 @@
   --color-accent: #c41e3a;
   --color-accent-light: #e85d75;
   --color-gold: #d4a843;
+  --color-gold-light: #e0bd6a;
   --color-surface: #fafafa;
   --color-surface-dark: #0a0a0a;
   --color-text: #171717;
   --color-text-muted: #6b7280;
+
+  /* --- Semantic layer (added in the UI-consistency pass) -----------------
+     The learner surfaces were "token-defined but token-ignored": they reached
+     past the brand vars for raw Tailwind blue/green/amber. These tokens give one
+     home for every surface, border, tint and status colour so the whole learner
+     half reads as one navy/crimson/gold system. Prefer these over Tailwind
+     palette utilities on any learner surface. */
+  --color-surface-2: #f3f4f6; /* tabs, pills, tracks, skeletons */
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-scrim: rgba(0, 0, 0, 0.4);
+
+  /* Single selected / hover / info tints (replace every bg-blue-50 etc.) */
+  --color-primary-tint: color-mix(in srgb, var(--color-primary) 8%, white);
+  --color-accent-tint: color-mix(in srgb, var(--color-accent) 8%, white);
+  --color-gold-tint: color-mix(in srgb, var(--color-gold) 15%, white);
+  --color-primary-fg-muted: rgba(255, 255, 255, 0.72); /* muted text on navy */
+
+  /* Status — brand-aligned: one success, one danger (= crimson), one warning (= gold) */
+  --color-success: #16a34a;
+  --color-success-surface: #ecfdf3;
+  --color-danger: var(--color-accent);
+  --color-danger-surface: var(--color-accent-tint);
+  --color-warning: var(--color-gold);
+  --color-warning-surface: var(--color-gold-tint);
+
+  /* Radius scale (one card corner, one control corner, one pill) */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --radius-pill: 9999px;
+
+  /* --- Lesson presentation foundation (design-system Tier 1) -------------
+     One home for the teach-slide card's reading width, padding and vertical
+     rhythm, so every lesson A1–C2 shares the same measure and spacing. */
+  --lesson-measure: 42rem;   /* readable card width (~672px) */
+  --lesson-pad: 2rem;        /* card internal padding */
+  --lesson-line: 1.65;       /* body leading for lesson prose */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Interactive glossary-term marker — a calm affordance, NOT an error
+     squiggle. The crimson accent read as a spellcheck error to learners, so
+     this uses the navy primary at low prominence. */
+  --color-gloss-underline: color-mix(in srgb, var(--color-primary) 40%, transparent);
+
+  /* CEFR band colours — a navy→gold ramp (beginner navy → advanced gold), never
+     the old green/lime/yellow/orange/red rainbow that collided with the accent. */
+  --cefr-a1: #4a76a8;
+  --cefr-a2: #2e5a8f;
+  --cefr-b1: #1e3a5f;
+  --cefr-b2: #8a6d3b;
+  --cefr-c1: #b0872e;
+  --cefr-c2: #a8842b;
+
+  /* --- Semantic highlight map (design-system Tier 3) --------------------
+     ONE source of truth for meaning-carrying colour inside lessons. Any block
+     that colours part of a word — case endings, breakdown segments, table
+     columns — reads from here, never ad-hoc hues. This is a deliberate
+     semantic layer OUTSIDE the navy/crimson/gold brand ramp: the six cases
+     need six distinguishable colours, and consistency across every lesson is
+     what makes the colour actually teach. */
+  --hl-nom: #2563eb;    /* nominative — blue (subject) */
+  --hl-gen: #15803d;    /* genitive — green (of/possession) */
+  --hl-dat: #7c3aed;    /* dative — purple (recipient) */
+  --hl-acc: #ea580c;    /* accusative — orange (direct object) */
+  --hl-instr: #be185d;  /* instrumental — magenta (by/with) */
+  --hl-prep: #4b5563;   /* prepositional — slate (about/location) */
+  /* Generic word-part highlights (breakdown stem / ending / stress) */
+  --hl-stem: #1f2937;
+  --hl-ending: #dc2626;
+  --hl-stress: #b45309;
+  /* soft tints of each case for a row's left rail / background */
+  --hl-nom-soft: color-mix(in srgb, var(--hl-nom) 8%, white);
+  --hl-gen-soft: color-mix(in srgb, var(--hl-gen) 8%, white);
+  --hl-dat-soft: color-mix(in srgb, var(--hl-dat) 8%, white);
+  --hl-acc-soft: color-mix(in srgb, var(--hl-acc) 8%, white);
+  --hl-instr-soft: color-mix(in srgb, var(--hl-instr) 8%, white);
+  --hl-prep-soft: color-mix(in srgb, var(--hl-prep) 8%, white);
+
+  /* Transliteration — a QUIET helper tone, never the crimson accent (which
+     reads as an error). Level-gated off from B1 up in the renderer. */
+  --color-translit: #64748b;
 }
 
 @theme inline {
@@ -18,8 +105,113 @@
   --color-accent: var(--color-accent);
   --color-accent-light: var(--color-accent-light);
   --color-gold: var(--color-gold);
+
+  /* Make Tailwind's `font-sans` / `font-serif` resolve to our chosen faces. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-lora), ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Registered animations — Tailwind v4 emits the referenced @keyframes only
+     when they live in the theme, so custom motion goes here (a bare @keyframes
+     in the stylesheet is tree-shaken away). Shared by every teach slide. */
+  --animate-teach-in: teachSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fadeIn 0.2s ease-out;
+
+  @keyframes teachSlideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 }
 
 html {
   scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+/* Large-text accessibility (sidebar toggle; defaults larger for the senior
+   track). Scaling the ROOT font-size scales every rem-based size proportionally. */
+html[data-text-size="large"] {
+  font-size: 18px;
+}
+html[data-text-size="xlarge"] {
+  font-size: 20px;
+}
+
+/* Base typography. Body ≥16px with a comfortable line-height: the size and
+   spacing of text are the levers with the strongest, most replicable effect on
+   reading speed and comprehension (more so than the typeface itself), so we set
+   them deliberately. optimizeLegibility + kerning enable proper letter shaping. */
+body {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern", "liga", "calt";
+}
+
+/* Long-form reading (literary Library, reading-comprehension passages). Serif,
+   slightly larger, looser leading and a constrained measure (~66ch) — the
+   classic comfortable-reading range of 45–75 characters per line. */
+.reading {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  line-height: 1.75;
+  max-width: 66ch;
+}
+
+/* Russian *target text* the learner is actively decoding (exercise prompts,
+   the word/sentence being taught). Kept upright (italic Cyrillic diverges
+   sharply from print forms and trips up beginners) and given extra tracking so
+   visually similar glyphs — и/й, ш/щ, ц/щ, ь/ъ/ы — separate cleanly. */
+.ru-text {
+  font-style: normal;
+  letter-spacing: 0.01em;
+  font-feature-settings: "kern", "liga";
+}
+
+/* Brand display layer — the РУССКИЙ wordmark, hero H1s, and result/exam headings
+   opt into Lora for a scholarly voice distinct from the Inter UI body. */
+.display {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+
+/* --- Lesson slide primitives (design-system Tier 1) ---------------------
+   Shared by every teach block. `.lesson-body` left-aligns explanatory prose
+   with a comfortable measure + leading (multi-line reading text is easier to
+   parse left-aligned); `.lesson-focus` centers a single Russian focal point
+   (a letter, headword, or example sentence the eye locks onto). One rhythm
+   token drives the gap between a block's stacked pieces. */
+.lesson-body {
+  text-align: left;
+  line-height: var(--lesson-line);
+  max-width: var(--lesson-measure);
+}
+.lesson-focus {
+  text-align: center;
+}
+.lesson-stack > * + * {
+  margin-top: var(--space-3);
+}
+/* Lesson text is never editable — suppress any browser spellcheck squiggles
+   defensively, so no red underline is ever confused with an error. */
+.lesson-card,
+.lesson-card * {
+  -webkit-spelling-error-color: transparent;
+}
+
+/* --- Motion (design-system Tier 3) -------------------------------------
+   Every teach slide uses the `animate-teach-in` utility (from --animate-teach-in
+   in the theme) so moving through any lesson A1–C2 feels the same. Reduced-
+   motion users get an instant cut. */
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-"] {
+    animation: none !important;
+  }
+  html { scroll-behavior: auto; }
 }

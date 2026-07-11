@@ -16,11 +16,17 @@ import (
 type ProfileHandler struct {
 	profiles *store.ProfileStore
 	skills   *store.SkillStore
+	users    *store.UserStore
 }
 
-func NewProfileHandler(profiles *store.ProfileStore, skills *store.SkillStore) *ProfileHandler {
-	return &ProfileHandler{profiles: profiles, skills: skills}
+func NewProfileHandler(profiles *store.ProfileStore, skills *store.SkillStore, users *store.UserStore) *ProfileHandler {
+	return &ProfileHandler{profiles: profiles, skills: skills, users: users}
 }
+
+// minorSegments are the under-18 segments. Under Russian law (152-FZ) a minor cannot
+// consent — the account holder (the parent/legal guardian who registered) consents on
+// the child's behalf when setting up the profile. A guardian-consent record is required.
+var minorSegments = map[string]bool{"kid": true, "teen": true}
 
 func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
@@ -90,6 +96,24 @@ func (h *ProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Initialize skills for this learner based on their starting level
 	if err := h.skills.InitializeSkills(r.Context(), profile.ID, string(profile.CurrentLevel)); err != nil {
 		log.Printf("Warning: failed to initialize skills for profile %s: %v", profile.ID, err)
+	}
+
+	// Persist a server-side, auditable GUARDIAN-consent record for any under-18 (minor)
+	// segment — the account holder (parent/guardian) consents on the child's behalf, since
+	// a minor cannot legally consent (152-FZ). The consenter's email is the ACCOUNT's email
+	// (derived server-side, not trusted from the client), so the record is defensible.
+	if minorSegments[string(req.Segment)] {
+		method := "guardian_checkbox"
+		if req.Consent != nil && req.Consent.Method != "" {
+			method = req.Consent.Method
+		}
+		consenterEmail := ""
+		if u, err := h.users.GetByID(r.Context(), profile.UserID); err == nil && u != nil {
+			consenterEmail = u.Email // the guardian = the registered account holder
+		}
+		if err := h.profiles.RecordConsent(r.Context(), uid, profile.ID, string(req.Segment), method, consenterEmail); err != nil {
+			log.Printf("Warning: failed to record guardian consent for user %s: %v", uid, err)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, profile)

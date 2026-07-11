@@ -30,15 +30,15 @@ type AdaptiveEngine struct {
 
 // ActivityEvent represents a Kafka activity event.
 type ActivityEvent struct {
-	EventID    uuid.UUID
-	LearnerID  uuid.UUID
-	SessionID  uuid.UUID
-	ContentID  uuid.UUID
-	SkillID    string
-	IsCorrect  bool
-	ErrorType  string
-	XPEarned   int
-	Timestamp  time.Time
+	EventID   uuid.UUID
+	LearnerID uuid.UUID
+	SessionID uuid.UUID
+	ContentID uuid.UUID
+	SkillID   string
+	IsCorrect bool
+	ErrorType string
+	XPEarned  int
+	Timestamp time.Time
 }
 
 // NewAdaptiveEngine creates a fully-wired engine for integration tests.
@@ -312,12 +312,12 @@ func (ae *AdaptiveEngine) CompleteSession(sessionID, learnerID uuid.UUID, result
 	}
 
 	return &SessionSummaryResult{
-		SessionID:   sessionID,
-		TotalXP:     totalXP,
-		Correct:     correct,
-		Total:       len(results),
-		Accuracy:    float64(correct) / float64(len(results)),
-		Skills:      skills,
+		SessionID: sessionID,
+		TotalXP:   totalXP,
+		Correct:   correct,
+		Total:     len(results),
+		Accuracy:  float64(correct) / float64(len(results)),
+		Skills:    skills,
 	}
 }
 

@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { MultipleChoice, FillBlank, Matching, Dialogue } from "@/components/exercises";
 import { api, type SessionWithItems, type SessionItem } from "@/lib/api";
+import { auth } from "@/lib/auth";
+import { buildLocalSession } from "@/content";
+import { Chip, Callout, buttonClasses } from "@/components/ui";
 
 type ExerciseData = { type: string; role: string; data: Record<string, unknown> };
 
@@ -27,41 +30,57 @@ export default function LearnPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingResult, setPendingResult] = useState<{ correct: boolean; xp: number } | null>(null);
+  const [usingLocal, setUsingLocal] = useState(false);
   const startTimeRef = useRef<number>(Date.now());
   const exerciseKeyRef = useRef(0);
 
+  // Fall back to the curated literature/history library when the adaptive API
+  // can't produce a session — the learn flow still works and shows real content.
+  function loadLocalFallback() {
+    const local = buildLocalSession(8).map((e) => ({ type: e.type, role: e.role, data: e.data }));
+    if (local.length > 0) {
+      setExercises(local);
+      setUsingLocal(true);
+      setError("");
+    } else {
+      setError("No exercises available right now. Please try again later.");
+    }
+  }
+
   useEffect(() => {
-    // Check if placement test is completed — redirect if not
-    const placementDone = localStorage.getItem("placement_completed");
-    if (!placementDone) {
+    // Check if placement test is completed — redirect if not. Uses the typed
+    // checker (=== "true") so a "false" string isn't mistaken for completion.
+    if (!auth.isPlacementCompleted()) {
       window.location.href = "/dashboard/placement";
       return;
     }
 
     async function loadSession() {
       try {
-        const learnerId = localStorage.getItem("learner_id");
+        const learnerId = auth.getLearnerId();
         if (!learnerId) {
-          setError("No learner profile found. Please sign up or log in again.");
+          // No profile (e.g. offline / not signed up) — use the local library.
+          loadLocalFallback();
           setLoading(false);
           return;
         }
         const session = await api.generateSession(learnerId, 15);
         if (session && session.items && session.items.length > 0) {
-          setSessionData(session);
           const mapped = session.items
             .map(exerciseFromItem)
             .filter((e): e is NonNullable<typeof e> => e !== null);
           if (mapped.length > 0) {
+            setSessionData(session);
             setExercises(mapped);
           } else {
-            setError("Session generated but no exercises could be loaded.");
+            loadLocalFallback();
           }
         } else {
-          setError("Could not generate a session. Try again later.");
+          loadLocalFallback();
         }
       } catch {
-        setError("Could not connect to the API. Make sure the server is running.");
+        // API unreachable — fall back to the curated library so learning continues.
+        loadLocalFallback();
       } finally {
         setLoading(false);
       }
@@ -73,8 +92,14 @@ export default function LearnPage() {
   const progress = exercises.length > 0 ? (currentIndex / exercises.length) * 100 : 0;
   const totalXP = results.reduce((sum, r) => sum + r.xp, 0);
 
-  // Called when user checks their answer — shows feedback, submits to API, but does NOT advance
-  async function handleAnswerSubmit(response: string, correct: boolean, hintLevel: number) {
+  // Called when user checks their answer — shows feedback, submits to API, but does NOT advance.
+  // Returns the scored result so callers that advance immediately (dialogues) don't have to
+  // wait for the pendingResult state to commit.
+  async function handleAnswerSubmit(
+    response: string,
+    correct: boolean,
+    hintLevel: number
+  ): Promise<{ correct: boolean; xp: number }> {
     const elapsed = Date.now() - startTimeRef.current;
     let xp = correct ? 15 + Math.floor(Math.random() * 10) : 3;
 
@@ -102,16 +127,16 @@ export default function LearnPage() {
       }
     }
 
-    setPendingResult({ correct, xp });
+    const scored = { correct, xp };
+    setPendingResult(scored);
+    return scored;
   }
 
-  // Called when user clicks "Continue" after seeing feedback — advances to next exercise
-  function handleContinue() {
-    if (!pendingResult) return;
-
+  // Records a result and moves to the next exercise (or completes the session).
+  // Takes the result explicitly so it never depends on un-committed pendingResult state.
+  function advance(result: { correct: boolean; xp: number }) {
     startTimeRef.current = Date.now();
-    const newResults = [...results, pendingResult];
-    setResults(newResults);
+    setResults((prev) => [...prev, result]);
     setPendingResult(null);
     exerciseKeyRef.current++;
 
@@ -126,12 +151,18 @@ export default function LearnPage() {
     }
   }
 
+  // Called when user clicks "Continue" after seeing feedback — advances to next exercise
+  function handleContinue() {
+    if (!pendingResult) return;
+    advance(pendingResult);
+  }
+
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto mt-20 text-center">
         <div className="animate-pulse">
-          <div className="h-3 bg-gray-200 rounded-full mb-8" />
-          <div className="h-64 bg-gray-100 rounded-xl" />
+          <div className="h-3 bg-[var(--color-surface-2)] rounded-full mb-8" />
+          <div className="h-64 bg-[var(--color-surface-2)] rounded-[var(--radius-card)]" />
         </div>
         <p className="text-[var(--color-text-muted)] mt-4">Generating your adaptive session...</p>
       </div>
@@ -147,14 +178,11 @@ export default function LearnPage() {
         <div className="flex gap-4 justify-center">
           <button
             onClick={() => window.location.reload()}
-            className="bg-[var(--color-accent)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-accent-light)] transition-colors"
+            className={buttonClasses("primary", "lg")}
           >
             Try Again
           </button>
-          <a
-            href="/dashboard"
-            className="bg-gray-100 text-gray-700 font-semibold px-8 py-3 rounded-xl hover:bg-gray-200 transition-colors"
-          >
+          <a href="/dashboard" className={buttonClasses("secondary", "lg")}>
             Back to Dashboard
           </a>
         </div>
@@ -171,17 +199,17 @@ export default function LearnPage() {
           Session Complete!
         </h1>
         <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="bg-white rounded-[var(--radius-card)] border border-[var(--color-border)] p-4">
             <p className="text-2xl font-bold text-[var(--color-primary)]">
               {correctCount}/{results.length}
             </p>
             <p className="text-xs text-[var(--color-text-muted)]">Correct</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-2xl font-bold text-green-600">+{totalXP}</p>
+          <div className="bg-white rounded-[var(--radius-card)] border border-[var(--color-border)] p-4">
+            <p className="text-2xl font-bold text-[var(--color-gold)]">+{totalXP}</p>
             <p className="text-xs text-[var(--color-text-muted)]">XP Earned</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="bg-white rounded-[var(--radius-card)] border border-[var(--color-border)] p-4">
             <p className="text-2xl font-bold text-[var(--color-gold)]">
               {Math.round((correctCount / results.length) * 100)}%
             </p>
@@ -192,14 +220,11 @@ export default function LearnPage() {
         <div className="flex gap-4 justify-center">
           <button
             onClick={() => window.location.reload()}
-            className="bg-[var(--color-accent)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-accent-light)] transition-colors"
+            className={buttonClasses("primary", "lg")}
           >
             Practice Again
           </button>
-          <a
-            href="/dashboard"
-            className="bg-gray-100 text-gray-700 font-semibold px-8 py-3 rounded-xl hover:bg-gray-200 transition-colors"
-          >
+          <a href="/dashboard" className={buttonClasses("secondary", "lg")}>
             Back to Dashboard
           </a>
         </div>
@@ -217,28 +242,30 @@ export default function LearnPage() {
 
   return (
     <div className="max-w-3xl mx-auto">
+      {usingLocal && (
+        <Callout tone="info" className="mb-4 text-xs text-center">
+          📚 Practicing from the offline Library (literature &amp; history). Progress won&apos;t sync until you&apos;re back online.
+        </Callout>
+      )}
+
       {/* Progress bar */}
       <div className="flex items-center gap-4 mb-2">
-        <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden">
+        <div className="flex-1 h-2 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
           <div
             className="h-full bg-[var(--color-primary)] rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-sm font-medium text-[var(--color-text-muted)]">
+        <span className="text-sm font-medium text-[var(--color-text-muted)] tabular-nums">
           {currentIndex + 1}/{exercises.length}
         </span>
-        <span className="text-sm font-bold text-green-600">+{totalXP} XP</span>
+        <span className="text-sm font-bold text-[var(--color-gold)] tabular-nums">+{totalXP} XP</span>
       </div>
 
       {/* Role badge */}
       <div className="flex items-center justify-between mb-8">
-        <span className="text-xs font-medium bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
-          {ROLE_LABELS[exercise.role] || exercise.role}
-        </span>
-        <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-          Live &bull; Adaptive
-        </span>
+        <Chip tone="brand">{ROLE_LABELS[exercise.role] || exercise.role}</Chip>
+        <Chip tone={usingLocal ? "gold" : "success"}>{usingLocal ? "Library" : "Live · Adaptive"}</Chip>
       </div>
 
       {/* Exercise rendering */}
@@ -286,10 +313,11 @@ export default function LearnPage() {
           key={exerciseKeyRef.current}
           dialogueLines={(exercise.data.dialogueLines as Array<{ speaker: string; textRu: string; textEn: string }>) || []}
           explanationEn={exercise.data.explanationEn as string}
-          onComplete={() => {
-            handleAnswerSubmit("dialogue_complete", true, 0);
-            // Auto-advance for dialogues since there's nothing to "check"
-            setTimeout(() => handleContinue(), 0);
+          onComplete={async () => {
+            // Dialogues have nothing to "check" — submit, then advance with the
+            // returned result directly (no reliance on un-committed state).
+            const scored = await handleAnswerSubmit("dialogue_complete", true, 0);
+            advance(scored);
           }}
         />
       )}

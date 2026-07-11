@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/russkiy/api/internal/engine"
+	"github.com/russkiy/api/internal/middleware"
 	"github.com/russkiy/api/internal/model"
 	"github.com/russkiy/api/internal/store"
 )
@@ -62,6 +63,12 @@ func (h *PlacementHandler) GeneratePlacement(w http.ResponseWriter, r *http.Requ
 	profile, err := h.profiles.GetByID(ctx, req.LearnerID)
 	if err != nil || profile == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "learner profile not found"})
+		return
+	}
+	// Ownership: the profile must belong to the caller (audit IDOR fix) — otherwise
+	// this becomes a cross-tenant profile-existence + segment probe.
+	if uid, perr := uuid.Parse(middleware.GetUserID(ctx)); perr != nil || profile.UserID != uid {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
 		return
 	}
 
@@ -196,8 +203,8 @@ func (h *PlacementHandler) GeneratePlacement(w http.ResponseWriter, r *http.Requ
 func (h *PlacementHandler) SubmitPlacement(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		LearnerID    uuid.UUID               `json:"learnerId"`
-		Results      []model.SkillTestResult  `json:"results"`
-		StoppedStage int                      `json:"stoppedStage"` // Which stage the learner stopped at (failed)
+		Results      []model.SkillTestResult `json:"results"`
+		StoppedStage int                     `json:"stoppedStage"` // Which stage the learner stopped at (failed)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -237,6 +244,13 @@ func (h *PlacementHandler) SubmitPlacement(w http.ResponseWriter, r *http.Reques
 	profile, err := h.profiles.GetByID(ctx, req.LearnerID)
 	if err != nil || profile == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "learner profile not found"})
+		return
+	}
+	// Ownership: reject cross-tenant writes BEFORE touching level/skills (audit
+	// blocker fix). Without this any learner could overwrite another's CEFR level
+	// and skill states — and UpdateLevel is not monotonic, so it can downgrade them.
+	if uid, perr := uuid.Parse(middleware.GetUserID(ctx)); perr != nil || profile.UserID != uid {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
 		return
 	}
 

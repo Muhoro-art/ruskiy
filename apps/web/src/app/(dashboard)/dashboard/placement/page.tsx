@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { MultipleChoice, FillBlank, Matching } from "@/components/exercises";
+import { auth } from "@/lib/auth";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+// Same-origin Next.js proxy by default so requests carry the httpOnly auth cookie
+// (no localhost fallback that breaks on HTTPS, no localStorage Bearer token).
+const API = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 interface PlacementItem {
   skillId: string;
@@ -96,9 +99,8 @@ export default function PlacementPage() {
   }, []);
 
   async function generatePlacement() {
-    const token = localStorage.getItem("access_token");
-    const learnerId = localStorage.getItem("learner_id");
-    if (!token || !learnerId) {
+    const learnerId = auth.getLearnerId();
+    if (!auth.isAuthenticated() || !learnerId) {
       router.push("/login");
       return;
     }
@@ -106,10 +108,8 @@ export default function PlacementPage() {
     try {
       const res = await fetch(`${API}/v1/placement/generate`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ learnerId }),
       });
 
@@ -121,7 +121,7 @@ export default function PlacementPage() {
       setStageMinPass(data.stageMinPass || []);
       setPhase("intro");
     } catch {
-      router.push("/dashboard/learn");
+      router.push("/dashboard/path");
     } finally {
       setLoading(false);
     }
@@ -224,8 +224,7 @@ export default function PlacementPage() {
 
   async function submitPlacement(stopped: number) {
     setPhase("submitting");
-    const token = localStorage.getItem("access_token");
-    const learnerId = localStorage.getItem("learner_id");
+    const learnerId = auth.getLearnerId();
 
     const apiResults = results.map((r) => ({
       skillId: r.skillId,
@@ -236,10 +235,8 @@ export default function PlacementPage() {
     try {
       const res = await fetch(`${API}/v1/placement/submit`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ learnerId, results: apiResults, stoppedStage: stopped }),
       });
 
@@ -249,6 +246,7 @@ export default function PlacementPage() {
         setTotalCorrect(data.totalCorrect);
         localStorage.setItem("placement_completed", "true");
         localStorage.setItem("current_level", data.determinedLevel);
+        localStorage.setItem("working_level", data.determinedLevel);
       }
     } catch {
       // Non-fatal
@@ -260,11 +258,12 @@ export default function PlacementPage() {
   function skipPlacement() {
     localStorage.setItem("placement_completed", "true");
     localStorage.setItem("current_level", "A1");
-    router.push("/dashboard/learn");
+    localStorage.setItem("working_level", "A1");
+    router.push("/dashboard/path");
   }
 
   function startLearning() {
-    router.push("/dashboard/learn");
+    router.push("/dashboard/path");
   }
 
   // --- RENDER ---

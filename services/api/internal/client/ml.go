@@ -6,19 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
 // MLClient communicates with the Python ML service.
 type MLClient struct {
 	baseURL    string
+	apiKey     string
 	httpClient *http.Client
 }
 
-// NewMLClient creates a new ML service client.
+// NewMLClient creates a new ML service client. It presents ML_SERVICE_KEY (if set)
+// as X-ML-Key so the ML service can require a shared secret instead of being open.
 func NewMLClient(baseURL string) *MLClient {
 	return &MLClient{
 		baseURL: baseURL,
+		apiKey:  os.Getenv("ML_SERVICE_KEY"),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -57,6 +61,9 @@ func (c *MLClient) ClassifyError(ctx context.Context, req ClassifyErrorRequest) 
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-ML-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {

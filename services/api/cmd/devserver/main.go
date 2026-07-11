@@ -1,5 +1,9 @@
-// Dev server: in-memory API for UI testing without PostgreSQL.
-// Run: go run ./cmd/devserver
+//go:build devserver
+
+// Dev server: in-memory API for UI testing without PostgreSQL. It uses INSECURE
+// shortcuts (hardcoded HS256 secret, bcrypt.MinCost, no ownership checks) and MUST
+// NOT run in production. The `devserver` build tag keeps it out of a normal
+// `go build ./...`; build/run it EXPLICITLY: `go run -tags devserver ./cmd/devserver`.
 package main
 
 import (
@@ -8,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -43,13 +48,13 @@ type MemStore struct {
 }
 
 type User struct {
-	ID           uuid.UUID   `json:"id"`
-	Email        string      `json:"email"`
-	PasswordHash string      `json:"-"`
-	CreatedAt    time.Time   `json:"createdAt"`
-	LastLogin    *time.Time  `json:"lastLogin"`
-	AccountType  string      `json:"accountType"`
-	Locale       string      `json:"locale"`
+	ID           uuid.UUID  `json:"id"`
+	Email        string     `json:"email"`
+	PasswordHash string     `json:"-"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	LastLogin    *time.Time `json:"lastLogin"`
+	AccountType  string     `json:"accountType"`
+	Locale       string     `json:"locale"`
 }
 
 type LearnerProfile struct {
@@ -197,11 +202,11 @@ func (s *MemStore) Seed() {
 
 	// Seed content atoms with real exercise data
 	exercises := []struct {
-		skill    string
-		level    string
-		exType   string
-		diff     float64
-		data     map[string]interface{}
+		skill  string
+		level  string
+		exType string
+		diff   float64
+		data   map[string]interface{}
 	}{
 		// Cyrillic matching
 		{"grammar.alphabet.cyrillic", "A1", "matching", 0.2, map[string]interface{}{
@@ -450,8 +455,8 @@ type userIDCtx struct {
 }
 
 func (c *userIDCtx) Deadline() (time.Time, bool) { return c.parent.Deadline() }
-func (c *userIDCtx) Done() <-chan struct{}        { return c.parent.Done() }
-func (c *userIDCtx) Err() error                   { return c.parent.Err() }
+func (c *userIDCtx) Done() <-chan struct{}       { return c.parent.Done() }
+func (c *userIDCtx) Err() error                  { return c.parent.Err() }
 func (c *userIDCtx) Value(key any) any {
 	if k, ok := key.(string); ok && k == "userID" {
 		return c.userID
@@ -474,6 +479,13 @@ func calculateXP(isCorrect bool, difficulty float64) int {
 // ============================================================
 
 func main() {
+	// Refuse to run outside an explicit development environment — a second guard
+	// (besides the build tag) so this insecure in-memory server can never be started
+	// in prod even if it is somehow built there.
+	if env := os.Getenv("ENVIRONMENT"); env != "" && env != "development" {
+		log.Fatalf("devserver refuses to run with ENVIRONMENT=%q (development only)", env)
+	}
+
 	store := NewMemStore()
 	store.Seed()
 
@@ -1008,16 +1020,36 @@ func main() {
 				})
 			})
 
-			// Teacher stubs
-			r.Post("/teacher/cohorts", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 201, map[string]string{"status": "created"}) })
+			// Teacher stubs.
+			//
+			// NOTE: the cohort-invite / join-code / assignment-targeting flows
+			// (GET+POST /teacher/cohorts/{id}/invites, POST /teacher/cohorts/{id}/code,
+			// GET /me/cohort-invites, POST /me/cohort-invites/{id}/respond,
+			// POST /cohorts/join, GET /me/assignments, GET /teacher/assignments) are
+			// NOT mocked here — they need the real server (Postgres-backed tenant
+			// checks + invite state). Run services/api/cmd/server to demo those; the
+			// web UI degrades gracefully against this devserver (empty lists / no-ops).
+			r.Post("/teacher/cohorts", func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, 201, map[string]string{"status": "created"})
+			})
 			r.Get("/teacher/cohorts", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, []interface{}{}) })
 			r.Get("/teacher/cohorts/{id}/heatmap", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]interface{}{}) })
-			r.Post("/teacher/assignments", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 201, map[string]string{"status": "created"}) })
+			r.Post("/teacher/assignments", func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, 201, map[string]string{"status": "created"})
+			})
 			r.Get("/teacher/students/{id}/report", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]interface{}{}) })
+			// Learner-facing joining/assignments: empty-list stubs so the Join page
+			// and Home assignments card render cleanly in no-Postgres dev mode.
+			r.Get("/me/cohort-invites", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, []interface{}{}) })
+			r.Get("/me/assignments", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, []interface{}{}) })
+			r.Get("/teacher/assignments", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, []interface{}{}) })
 		})
 	})
 
-	port := "8080"
+	port := "8099" // NOT 8080 — never collide with (or be mistaken for) the real server
+	if p := os.Getenv("PORT"); p != "" {
+		port = p
+	}
 	fmt.Println(`
   ██████  ██    ██ ███████ ███████ ██   ██ ██ ██    ██
   ██   ██ ██    ██ ██      ██      ██  ██  ██  ██  ██

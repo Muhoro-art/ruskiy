@@ -36,11 +36,36 @@ type RateLimiter struct {
 	config  RateLimitConfig
 }
 
-// NewRateLimiter creates a new rate limiter.
+// NewRateLimiter creates a new rate limiter and starts a background sweeper that
+// evicts expired windows, so the map doesn't grow unbounded (one entry per distinct
+// user for the process lifetime). This limiter is only the Redis-unavailable
+// fallback, but a churning user base under a Redis outage would otherwise leak memory.
 func NewRateLimiter(cfg RateLimitConfig) *RateLimiter {
-	return &RateLimiter{
+	rl := &RateLimiter{
 		windows: make(map[string]*userWindow),
 		config:  cfg,
+	}
+	go rl.sweep()
+	return rl
+}
+
+// sweep periodically deletes expired windows to bound memory.
+func (rl *RateLimiter) sweep() {
+	interval := rl.config.WindowDuration
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		rl.mu.Lock()
+		for k, w := range rl.windows {
+			if now.After(w.windowEnd) {
+				delete(rl.windows, k)
+			}
+		}
+		rl.mu.Unlock()
 	}
 }
 

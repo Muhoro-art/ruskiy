@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { buttonClasses } from "../ui";
 
 interface DialogueProps {
   dialogueLines: Array<{ speaker: string; textRu: string; textEn: string }>;
@@ -46,21 +47,21 @@ export function Dialogue({
                 className={`max-w-[80%] rounded-2xl px-5 py-3 transition-all ${
                   isUser
                     ? "bg-[var(--color-primary)] text-white rounded-br-md"
-                    : "bg-white border border-gray-200 rounded-bl-md"
+                    : "bg-white border border-[var(--color-border)] rounded-bl-md"
                 }`}
               >
                 <p className="text-xs font-medium mb-1 opacity-70">
                   {line.speaker}
                 </p>
-                <p className={`text-base font-medium ${isUser ? "text-white" : "text-[var(--color-text)]"}`}>
+                <p className={`ru-text text-base font-medium ${isUser ? "text-white" : "text-[var(--color-text)]"}`}>
                   {line.textRu}
                 </p>
                 {showTranslation[i] && (
                   <p
                     className={`text-sm mt-2 pt-2 border-t ${
                       isUser
-                        ? "border-white/20 text-blue-100"
-                        : "border-gray-200 text-[var(--color-text-muted)]"
+                        ? "border-white/20 text-[var(--color-primary-fg-muted)]"
+                        : "border-[var(--color-border)] text-[var(--color-text-muted)]"
                     }`}
                   >
                     {line.textEn}
@@ -74,8 +75,11 @@ export function Dialogue({
 
       {/* Explanation */}
       {allVisible && explanationEn && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
+        <div
+          className="mb-6 p-4 rounded-[var(--radius-control)] border"
+          style={{ backgroundColor: "var(--color-primary-tint)", borderColor: "color-mix(in srgb, var(--color-primary) 20%, white)" }}
+        >
+          <p className="text-sm text-[var(--color-primary)]">
             <strong>Note:</strong> {explanationEn}
           </p>
         </div>
@@ -84,17 +88,11 @@ export function Dialogue({
       {/* Actions */}
       <div className="flex justify-end">
         {!allVisible ? (
-          <button
-            onClick={revealNext}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors"
-          >
+          <button onClick={revealNext} className={buttonClasses("navy", "lg")}>
             Next Line →
           </button>
         ) : (
-          <button
-            onClick={onComplete}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors"
-          >
+          <button onClick={onComplete} className={buttonClasses("navy", "lg")}>
             Continue →
           </button>
         )}

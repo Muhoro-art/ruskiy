@@ -87,10 +87,10 @@ func TestRefreshTokenRotationInvalidatesPreviousToken(t *testing.T) {
 
 	store := NewMemoryTokenStore()
 
-	// Generate initial refresh token (v1)
-	refreshV1, err := GenerateRefreshToken(kp, "user-abc")
+	// Generate initial refresh token (v1) and allowlist it by its jti.
+	refreshV1, jtiV1, err := GenerateRefreshToken(kp, "user-abc")
 	require.NoError(t, err)
-	_ = store.StoreRefreshToken(refreshV1, "user-abc")
+	_ = store.StoreRefreshToken(jtiV1, "user-abc")
 
 	// Rotate: returns new refresh_token_v2 + new access_token
 	result, err := RotateRefreshToken(kp, store, refreshV1, "learner", "free")
@@ -101,8 +101,8 @@ func TestRefreshTokenRotationInvalidatesPreviousToken(t *testing.T) {
 	assert.NotEmpty(t, result.RefreshToken, "rotation must return a new refresh token")
 	assert.NotEqual(t, refreshV1, result.RefreshToken, "new refresh token must differ from old")
 
-	// Assert: refresh_token_v1 is marked revoked
-	assert.True(t, store.IsRevoked(refreshV1), "old refresh token must be revoked")
+	// Assert: refresh_token_v1 is marked revoked (by jti)
+	assert.True(t, store.IsRevoked(jtiV1), "old refresh token must be revoked")
 
 	// Assert: subsequent use of refresh_token_v1 returns error + triggers alert
 	_, err = RotateRefreshToken(kp, store, refreshV1, "learner", "free")
@@ -110,7 +110,7 @@ func TestRefreshTokenRotationInvalidatesPreviousToken(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrTokenRevoked), "reusing revoked token must return ErrTokenRevoked")
 
 	// Verify alert was triggered
-	assert.True(t, store.WasReusedAfterRevoke(refreshV1), "reuse of revoked token must trigger alert")
+	assert.True(t, store.WasReusedAfterRevoke(jtiV1), "reuse of revoked token must trigger alert")
 }
 
 // ============================================================

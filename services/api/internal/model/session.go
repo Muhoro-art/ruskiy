@@ -19,11 +19,11 @@ const (
 type ErrorType string
 
 const (
-	ErrorTransfer          ErrorType = "transfer"
+	ErrorTransfer           ErrorType = "transfer"
 	ErrorOvergeneralization ErrorType = "overgeneralization"
-	ErrorAvoidance         ErrorType = "avoidance"
-	ErrorFossilization     ErrorType = "fossilization"
-	ErrorGeneral           ErrorType = "general"
+	ErrorAvoidance          ErrorType = "avoidance"
+	ErrorFossilization      ErrorType = "fossilization"
+	ErrorGeneral            ErrorType = "general"
 )
 
 type Session struct {
@@ -50,13 +50,13 @@ const (
 )
 
 type SessionItem struct {
-	ID          uuid.UUID       `json:"id"`
-	SessionID   uuid.UUID       `json:"sessionId"`
-	Position    int             `json:"position"`
-	ContentID   uuid.UUID       `json:"contentId"`
-	SkillID     string          `json:"skillId"`
-	Role        SessionItemRole `json:"role"`
-	Completed   bool            `json:"completed"`
+	ID        uuid.UUID       `json:"id"`
+	SessionID uuid.UUID       `json:"sessionId"`
+	Position  int             `json:"position"`
+	ContentID uuid.UUID       `json:"contentId"`
+	SkillID   string          `json:"skillId"`
+	Role      SessionItemRole `json:"role"`
+	Completed bool            `json:"completed"`
 }
 
 // SessionWithItems is a session plus its ordered exercise items with content.
@@ -88,18 +88,18 @@ type ExerciseResult struct {
 }
 
 type GenerateSessionRequest struct {
-	LearnerID         uuid.UUID `json:"learnerId"`
-	TimeBudgetMinutes int       `json:"timeBudgetMinutes"`
+	LearnerID         uuid.UUID  `json:"learnerId"`
+	TimeBudgetMinutes int        `json:"timeBudgetMinutes"`
 	AssignmentID      *uuid.UUID `json:"assignmentId,omitempty"`
 }
 
 type SessionSummary struct {
-	SessionID      uuid.UUID `json:"sessionId"`
-	TotalExercises int       `json:"totalExercises"`
-	CorrectCount   int       `json:"correctCount"`
-	AccuracyRate   float64   `json:"accuracyRate"`
-	TotalXP        int       `json:"totalXp"`
-	SkillsPracticed []string `json:"skillsPracticed"`
-	Duration       int       `json:"duration"`
-	StreakDays     int       `json:"streakDays"`
+	SessionID       uuid.UUID `json:"sessionId"`
+	TotalExercises  int       `json:"totalExercises"`
+	CorrectCount    int       `json:"correctCount"`
+	AccuracyRate    float64   `json:"accuracyRate"`
+	TotalXP         int       `json:"totalXp"`
+	SkillsPracticed []string  `json:"skillsPracticed"`
+	Duration        int       `json:"duration"`
+	StreakDays      int       `json:"streakDays"`
 }

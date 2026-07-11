@@ -101,7 +101,7 @@ func (s *SessionStore) MarkItemCompleted(ctx context.Context, itemID uuid.UUID) 
 	return err
 }
 
-// UpdateSessionState updates session progress counters.
+// UpdateSessionState updates session progress counters (absolute set — legacy).
 func (s *SessionStore) UpdateSessionState(ctx context.Context, sessionID uuid.UUID, currentIndex int, totalXP int, accuracyRate float64) error {
 	_, err := s.db.Exec(ctx, `
 		UPDATE sessions SET current_index = $2, total_xp = $3, accuracy_rate = $4
@@ -110,14 +110,37 @@ func (s *SessionStore) UpdateSessionState(ctx context.Context, sessionID uuid.UU
 	return err
 }
 
-// CompleteSession marks a session as completed.
-func (s *SessionStore) CompleteSession(ctx context.Context, sessionID uuid.UUID, totalXP int, accuracyRate float64, durationSec int) error {
+// IncrementSessionProgress atomically advances the counters and recomputes accuracy
+// from the persisted exercise_results, so two concurrent /submit requests can't lose
+// an index or XP increment via a read-modify-write race (the result row is saved
+// before this runs, so it is included in the average).
+func (s *SessionStore) IncrementSessionProgress(ctx context.Context, sessionID uuid.UUID, xpDelta int) error {
 	_, err := s.db.Exec(ctx, `
+		UPDATE sessions SET
+			current_index = current_index + 1,
+			total_xp = total_xp + $2,
+			accuracy_rate = COALESCE((
+				SELECT avg(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END)
+				FROM exercise_results WHERE session_id = $1), 0)
+		WHERE id = $1
+	`, sessionID, xpDelta)
+	return err
+}
+
+// CompleteSession marks a session as completed IF it isn't already, and returns the
+// number of rows changed (1 = this call performed the transition, 0 = already
+// completed). Callers gate one-shot side effects (streak/XP) on a return of 1 so a
+// double-tap / retry can't double-count.
+func (s *SessionStore) CompleteSession(ctx context.Context, sessionID uuid.UUID, totalXP int, accuracyRate float64, durationSec int) (int64, error) {
+	tag, err := s.db.Exec(ctx, `
 		UPDATE sessions SET status = 'completed', completed_at = NOW(),
 		       total_xp = $2, accuracy_rate = $3, duration = $4
-		WHERE id = $1
+		WHERE id = $1 AND status <> 'completed'
 	`, sessionID, totalXP, accuracyRate, durationSec)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // ListByLearner returns recent sessions for a learner.

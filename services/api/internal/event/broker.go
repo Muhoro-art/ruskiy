@@ -81,7 +81,7 @@ type Broker struct {
 	groups         map[string]*consumerGroupState // groupID -> state
 	numBrokers     int
 	killedBrokers  map[int]bool
-	subscribers    map[string][]chan Record // topic -> list of subscriber channels
+	subscribers    map[string][]chan Record   // topic -> list of subscriber channels
 	idempotencyLog map[string]map[string]bool // groupID -> set of processed event IDs
 }
 

@@ -421,13 +421,13 @@ func (s *PgStore) QueryContent(q ContentQuery) ([]*ContentAtom, QueryPlan) {
 
 	elapsed := time.Since(start)
 	plan := QueryPlan{
-		Duration:       elapsed,
-		IndexesUsed:    []string{"idx_content_skills (GIN)", "idx_content_segments (GIN)", "idx_content_cefr"},
-		ScanType:       "Bitmap Heap Scan",
-		RowsExamined:   len(s.contentAtoms),
-		RowsReturned:   len(results),
-		UsesGINIndex:   true,
-		UsesSeqScan:    false,
+		Duration:     elapsed,
+		IndexesUsed:  []string{"idx_content_skills (GIN)", "idx_content_segments (GIN)", "idx_content_cefr"},
+		ScanType:     "Bitmap Heap Scan",
+		RowsExamined: len(s.contentAtoms),
+		RowsReturned: len(results),
+		UsesGINIndex: true,
+		UsesSeqScan:  false,
 	}
 
 	return results, plan
@@ -468,11 +468,11 @@ func (s *PgStore) ContentCount() int {
 
 // CitusCluster simulates Citus distributed PostgreSQL.
 type CitusCluster struct {
-	mu           sync.Mutex
-	workers      int
-	shards       map[int][]uuid.UUID // workerID -> list of user IDs
-	shardMap     map[uuid.UUID]int   // userID -> workerID
-	totalShards  int
+	mu          sync.Mutex
+	workers     int
+	shards      map[int][]uuid.UUID // workerID -> list of user IDs
+	shardMap    map[uuid.UUID]int   // userID -> workerID
+	totalShards int
 }
 
 // NewCitusCluster creates a simulated Citus cluster with N workers.

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/russkiy/api/internal/client"
 	"github.com/russkiy/api/internal/engine"
+	"github.com/russkiy/api/internal/event"
 	"github.com/russkiy/api/internal/middleware"
 	"github.com/russkiy/api/internal/model"
 	"github.com/russkiy/api/internal/store"
@@ -22,6 +23,8 @@ type SessionHandler struct {
 	content  *store.ContentStore
 	streaks  *store.StreakStore
 	profiles *store.ProfileStore
+	teacher  *store.TeacherStore // auto-completes practice assignments on session finish (nil-safe)
+	notifier *event.Notifier     // pushes completion events to the teacher (nil-safe)
 	ml       *client.MLClient
 }
 
@@ -31,6 +34,8 @@ func NewSessionHandler(
 	content *store.ContentStore,
 	streaks *store.StreakStore,
 	profiles *store.ProfileStore,
+	teacher *store.TeacherStore,
+	notifier *event.Notifier,
 	ml *client.MLClient,
 ) *SessionHandler {
 	return &SessionHandler{
@@ -39,6 +44,8 @@ func NewSessionHandler(
 		content:  content,
 		streaks:  streaks,
 		profiles: profiles,
+		teacher:  teacher,
+		notifier: notifier,
 		ml:       ml,
 	}
 }
@@ -64,6 +71,14 @@ func (h *SessionHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.profiles.GetByID(ctx, req.LearnerID)
 	if err != nil || profile == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "learner profile not found"})
+		return
+	}
+
+	// Ownership: the body-supplied learnerId must resolve to a profile owned by the
+	// authenticated caller. Without this, any learner could generate sessions and
+	// initialize/read another learner's skills by passing their profile id (IDOR).
+	if uid, perr := uuid.Parse(middleware.GetUserID(ctx)); perr != nil || profile.UserID != uid {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
 		return
 	}
 
@@ -264,6 +279,11 @@ func (h *SessionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pin every downstream skill/streak/result write to the ownership-validated
+	// session's learner, ignoring any body-supplied learnerId (audit IDOR fix):
+	// otherwise the FSRS upsert would land on whatever learner the body named.
+	result.LearnerID = session.LearnerID
+
 	result.ID = uuid.New()
 	result.SessionID = sessionID
 	result.Timestamp = time.Now()
@@ -325,20 +345,9 @@ func (h *SessionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Update session state (re-fetch for latest counters)
-	session, _ = h.sessions.GetByID(ctx, sessionID)
-	if session != nil {
-		newIndex := session.CurrentIndex + 1
-		newTotalXP := session.TotalXP + xpEarned
-		// Rough accuracy update
-		totalAttempts := float64(newIndex)
-		correctSoFar := session.AccuracyRate * float64(session.CurrentIndex)
-		if result.IsCorrect {
-			correctSoFar++
-		}
-		newAccuracy := correctSoFar / totalAttempts
-		_ = h.sessions.UpdateSessionState(ctx, sessionID, newIndex, newTotalXP, newAccuracy)
-	}
+	// 6. Advance session counters ATOMICALLY in SQL (index + XP increment, accuracy
+	// recomputed from exercise_results) so concurrent submits don't lose an update.
+	_ = h.sessions.IncrementSessionProgress(ctx, sessionID, xpEarned)
 
 	// Build feedback response
 	feedback := map[string]interface{}{
@@ -375,20 +384,32 @@ func (h *SessionHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	durationSec := int(time.Since(session.StartedAt).Seconds())
-	if err := h.sessions.CompleteSession(ctx, sessionID, session.TotalXP, session.AccuracyRate, durationSec); err != nil {
+	transitioned, err := h.sessions.CompleteSession(ctx, sessionID, session.TotalXP, session.AccuracyRate, durationSec)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to complete session"})
 		return
 	}
 
-	// Update streak
-	_ = h.streaks.RecordActivity(ctx, session.LearnerID, session.TotalXP)
-
-	// Calculate level
-	streakStats, _ := h.streaks.Get(ctx, session.LearnerID)
-	if streakStats != nil {
-		newLevel := engine.LevelFromXP(streakStats.TotalXP)
-		_ = h.streaks.UpdateLevel(ctx, session.LearnerID, newLevel)
+	// Apply streak + level ONE-SHOT side effects only when THIS call performed the
+	// completion transition — a repeated/double-tapped /complete is a no-op, so XP
+	// and total_sessions can't be inflated by replaying the request.
+	if transitioned == 1 {
+		_ = h.streaks.RecordActivity(ctx, session.LearnerID, session.TotalXP)
+		if st, gerr := h.streaks.Get(ctx, session.LearnerID); gerr == nil && st != nil {
+			_ = h.streaks.UpdateLevel(ctx, session.LearnerID, engine.LevelFromXP(st.TotalXP))
+		}
+		// Practice-skills assignments (no attached materials) complete through
+		// adaptive work: a finished session may have pushed one over its
+		// min_exercises bar — mark it done regardless of score, and push a
+		// live event to the teacher's open classroom.
+		if h.teacher != nil {
+			if ids, aerr := h.teacher.AutoCompletePracticeAssignments(ctx, session.LearnerID); aerr == nil && len(ids) > 0 {
+				_ = h.streaks.AddXP(ctx, session.LearnerID, xpPracticeBonus*len(ids))
+				notifyCompletions(ctx, h.notifier, h.teacher, session.LearnerID, ids)
+			}
+		}
 	}
+	streakStats, _ := h.streaks.Get(ctx, session.LearnerID)
 
 	// Get skills practiced
 	items, _ := h.sessions.GetSessionItems(ctx, sessionID)

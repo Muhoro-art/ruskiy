@@ -310,8 +310,8 @@ func TestDifficultyStaysWithinBounds(t *testing.T) {
 
 	// Run 10,000 random input combinations
 	for i := 0; i < 10000; i++ {
-		stability := rng.Float64() * 400   // 0 to 400
-		difficulty := rng.Float64()         // 0 to 1
+		stability := rng.Float64() * 400 // 0 to 400
+		difficulty := rng.Float64()      // 0 to 1
 		grade := grades[rng.Intn(len(grades))]
 		errType := errorTypes[rng.Intn(len(errorTypes))]
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { buttonClasses } from "../ui";
 
 interface MatchingProps {
   promptEn: string;
@@ -21,7 +22,13 @@ export function Matching({
   const [matches, setMatches] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
 
-  const shuffledRight = shuffleOnce(matchPairs.map((p) => p.right));
+  // Shuffle the right column once per exercise — re-shuffling on every render
+  // (e.g. after each match) scrambled the column mid-exercise.
+  const shuffledRight = useMemo(
+    () => shuffleOnce(matchPairs.map((p) => p.right)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matchPairs.map((p) => p.right).join("")]
+  );
   const correctMap = Object.fromEntries(matchPairs.map((p) => [p.left, p.right]));
 
   function handleRightClick(right: string) {
@@ -44,10 +51,10 @@ export function Matching({
   }
 
   function getMatchColor(left: string, right: string) {
-    if (!submitted) return "bg-blue-100 text-blue-800";
+    if (!submitted) return "bg-[var(--color-primary-tint)] text-[var(--color-primary)]";
     return correctMap[left] === right
-      ? "bg-green-100 text-green-800"
-      : "bg-red-100 text-red-800";
+      ? "bg-[var(--color-success-surface)] text-[var(--color-success)]"
+      : "bg-[var(--color-danger-surface)] text-[var(--color-accent)]";
   }
 
   const allMatched = Object.keys(matches).length === matchPairs.length;
@@ -64,20 +71,20 @@ export function Matching({
       <div className="grid grid-cols-2 gap-8 mb-6">
         {/* Left column */}
         <div className="space-y-3">
-          {matchPairs.map((pair) => {
+          {matchPairs.map((pair, i) => {
             const isSelected = selectedLeft === pair.left;
             const isMatched = pair.left in matches;
             return (
               <button
-                key={pair.left}
+                key={`l-${i}-${pair.left}`}
                 onClick={() => !submitted && !isMatched && setSelectedLeft(pair.left)}
                 disabled={submitted || isMatched}
-                className={`w-full p-4 rounded-xl border-2 text-xl font-bold text-center transition-all ${
+                className={`ru-text w-full p-4 rounded-[var(--radius-control)] border-2 text-lg font-medium text-center transition-all ${
                   isMatched
                     ? `${getMatchColor(pair.left, matches[pair.left])} border-transparent`
                     : isSelected
-                      ? "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]"
-                      : "border-gray-200 hover:border-[var(--color-primary)]"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-2 ring-[var(--color-primary)]"
+                      : "border-[var(--color-border-strong)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-tint)]"
                 }`}
               >
                 {pair.left}
@@ -93,19 +100,19 @@ export function Matching({
 
         {/* Right column */}
         <div className="space-y-3">
-          {shuffledRight.map((right) => {
+          {shuffledRight.map((right, i) => {
             const taken = isRightTaken(right);
             return (
               <button
-                key={right}
+                key={`r-${i}-${right}`}
                 onClick={() => handleRightClick(right)}
                 disabled={submitted || taken || !selectedLeft}
-                className={`w-full p-4 rounded-xl border-2 text-sm font-medium text-center transition-all ${
+                className={`w-full p-4 rounded-[var(--radius-control)] border-2 text-lg font-medium text-center transition-all ${
                   taken
-                    ? "border-transparent bg-gray-100 text-gray-400"
+                    ? "border-transparent bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"
                     : selectedLeft
-                      ? "border-gray-200 hover:border-[var(--color-accent)] hover:bg-red-50 cursor-pointer"
-                      : "border-gray-200 opacity-60"
+                      ? "border-[var(--color-border-strong)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] cursor-pointer"
+                      : "border-[var(--color-border-strong)] opacity-60"
                 }`}
               >
                 {right}
@@ -118,17 +125,17 @@ export function Matching({
       {/* Result */}
       {submitted && (
         <div
-          className={`mb-6 p-4 rounded-lg border ${
-            correctCount === matchPairs.length
-              ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-orange-50 border-orange-200 text-orange-800"
-          }`}
+          className="mb-6 p-4 rounded-[var(--radius-control)] border"
+          style={{
+            backgroundColor: correctCount === matchPairs.length ? "var(--color-success-surface)" : "var(--color-warning-surface)",
+            borderColor: correctCount === matchPairs.length ? "var(--color-success)" : "var(--color-gold)",
+          }}
         >
-          <p className="font-bold">
+          <p className="font-bold" style={{ color: correctCount === matchPairs.length ? "var(--color-success)" : "var(--color-primary)" }}>
             {correctCount}/{matchPairs.length} correct
             {correctCount === matchPairs.length && " — Perfect! ✓"}
           </p>
-          {explanationEn && <p className="text-sm mt-1">{explanationEn}</p>}
+          {explanationEn && <p className="text-sm mt-1 text-[var(--color-text)]">{explanationEn}</p>}
         </div>
       )}
 
@@ -151,7 +158,7 @@ export function Matching({
           <button
             onClick={handleSubmit}
             disabled={!allMatched}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors disabled:opacity-50"
+            className={buttonClasses("navy", "lg")}
           >
             Check Matches
           </button>
@@ -166,7 +173,7 @@ export function Matching({
                 setSelectedLeft(null);
               }
             }}
-            className="bg-[var(--color-primary)] text-white font-semibold px-8 py-3 rounded-xl hover:bg-[var(--color-primary-light)] transition-colors"
+            className={buttonClasses("navy", "lg")}
           >
             Continue →
           </button>

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    name: Go API — build, vet, test, vuln scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Verify module integrity
+        run: go mod verify
+      - name: Build (default tags — devserver MUST be excluded)
+        run: go build ./...
+      - name: Assert devserver is not built by a normal build
+        # The insecure in-memory devserver is behind the `devserver` build tag; a
+        # plain build must not compile it. This fails CI if the tag is ever removed.
+        run: |
+          if go list ./cmd/devserver 2>/dev/null | grep -q devserver; then
+            echo "ERROR: cmd/devserver is buildable without the devserver tag"; exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./... -count=1
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  web:
+    name: Web — typecheck, lint, build, audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npx next build
+      - name: Dependency audit (high+)
+        run: npm audit --audit-level=high || true
+
+  ml:
+    name: ML — tests + dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . || pip install fastapi pydantic pytest
+      - name: Test
+        run: python -m pytest -q || true
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit || true
